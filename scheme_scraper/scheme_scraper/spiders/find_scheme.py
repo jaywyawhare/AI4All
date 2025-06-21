@@ -12,16 +12,16 @@ class FindScheme(scrapy.Spider):
     allowed_domains = ["myscheme.gov.in"]
     
     # Add configuration for rate limiting
-    custom_settings = {
-        'CONCURRENT_REQUESTS': 1,
-        'DOWNLOAD_DELAY': 2,
-        'RANDOMIZE_DOWNLOAD_DELAY': True,
-        'RETRY_ENABLED': True,
-        'RETRY_TIMES': 3,
-        'RETRY_HTTP_CODES': [429, 500, 502, 503, 504, 408, 401, 403],
-        'RETRY_BACKOFF_MAX': 60,
-        'RETRY_BACKOFF_BASE': 5,
-    }
+    # custom_settings = {
+    #     'CONCURRENT_REQUESTS': 10,
+    #     'DOWNLOAD_DELAY': 2,
+    #     'RANDOMIZE_DOWNLOAD_DELAY': True,
+    #     'RETRY_ENABLED': True,
+    #     'RETRY_TIMES': 3,
+    #     'RETRY_HTTP_CODES': [429, 500, 502, 503, 504, 408, 401, 403],
+    #     'RETRY_BACKOFF_MAX': 60,
+    #     'RETRY_BACKOFF_BASE': 5,
+    # }
 
     allowed_genders = ["male", "female", "transgender"]
     allowed_castes = ["sc", "st", "obc", "general", "ews", "pvtg"]
@@ -54,7 +54,7 @@ class FindScheme(scrapy.Spider):
     def intermidiate_parse(self, response):
         if response.status in [429, 403]:
             self.logger.info("Rate limited, waiting before retry...")
-            time.sleep(60)  # Wait 60 seconds before retry
+            time.sleep(10)  # Wait 60 seconds before retry
             yield scrapy.Request(
                 response.url,
                 headers=self.headers,
