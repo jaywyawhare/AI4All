@@ -28,7 +28,7 @@ CREATE TABLE users (
 CREATE TABLE messages (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT REFERENCES users(id),
-    message_type VARCHAR(10) CHECK (message_type IN ('text', 'image', 'video', 'voice')),
+    message_type VARCHAR(10) CHECK (message_type IN ('text', 'image', 'video', 'voice', 'chat')),
     content TEXT,
     media_url TEXT,
     language VARCHAR(10),
