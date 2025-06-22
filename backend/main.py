@@ -782,12 +782,6 @@ async def main():
     try:
         logger.info("Starting Voice-First WhatsApp Bot MCP Server...")
         
-        # Log tool names for debugging
-        tool_names = [tool.__name__ for tool in mcp.tools]
-        logger.info(f"Registered tools: {', '.join(tool_names)}")
-        
-        # Start the server
-        logger.info("Starting MCP server with stdio...")
         await mcp.run_stdio_async()
         
     except Exception as e:
