@@ -14,9 +14,15 @@ CREATE TABLE users (
     preferred_language VARCHAR(10) DEFAULT 'en',
     response_format VARCHAR(10) DEFAULT 'text' CHECK (response_format IN ('text', 'audio', 'both')),
     voice_enabled BOOLEAN DEFAULT true,
+    caste TEXT,
+    is_minority BOOLEAN DEFAULT false,
+    is_differently_abled BOOLEAN DEFAULT false,
+    is_bpl BOOLEAN DEFAULT false,
+    is_student BOOLEAN DEFAULT false,
     last_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 -- Messages table
 CREATE TABLE messages (
