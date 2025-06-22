@@ -91,7 +91,7 @@ CREATE TABLE user_scheme_matches (
 CREATE INDEX idx_users_wp_user_id ON users(wp_user_id);
 CREATE INDEX idx_messages_user_id ON messages(user_id);
 CREATE INDEX idx_messages_language ON messages(language);
-CREATE INDEX idx_messages_created_at ON messages(created_at);
+CREATE INDEX idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX idx_audio_files_user_id ON audio_files(user_id);
 CREATE INDEX idx_audio_files_created_at ON audio_files(created_at);
 CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
