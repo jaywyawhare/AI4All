@@ -463,8 +463,8 @@ async def main():
     # Create temp directories
     Path("temp_audio").mkdir(exist_ok=True)
     
-    # Start the MCP server
-    await mcp.run()
+    # Start the MCP server using stdio
+    await mcp.run_stdio_async()
 
 if __name__ == "__main__":
     asyncio.run(main())
