@@ -781,7 +781,6 @@ async def main():
     """Main function to run the MCP server."""
     try:
         logger.info("Starting Voice-First WhatsApp Bot MCP Server...")
-        logger.info(f"Available tools: {len(mcp.tools)} tools registered")
         
         # Log tool names for debugging
         tool_names = [tool.__name__ for tool in mcp.tools]
