@@ -3,11 +3,14 @@ import base64
 import tempfile
 import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 import requests
 import re
 import io
 import wave
+import shutil
+from datetime import datetime, timedelta
+import glob
 
 from config.settings import Settings
 
@@ -20,6 +23,14 @@ class AudioService:
         self.api_key = getattr(self.settings, 'SARVAM_API_KEY', None) or os.getenv('SARVAM_API_KEY')
         if not self.api_key:
             raise ValueError("SARVAM_API_KEY not found in settings or environment variables")
+        
+        # Create temp audio directory
+        self.temp_audio_dir = Path.cwd() / "temp_audio"
+        self.temp_audio_dir.mkdir(exist_ok=True)
+        
+        # Audio file rotation settings
+        self.max_temp_files = 100  # Maximum number of temp files to keep
+        self.max_file_age_hours = 24  # Maximum age of temp files in hours
         
         # Language mapping for Sarvam API
         self.language_mapping = {
@@ -36,7 +47,70 @@ class AudioService:
             "odia": "or-IN"
         }
     
-    async def transcribe(self, audio_data: str, language: str = "en") -> str:
+    def _cleanup_temp_files(self):
+        """Clean up old temporary audio files based on age and count."""
+        try:
+            # Get all temp audio files
+            temp_files = list(self.temp_audio_dir.glob("*.wav")) + list(self.temp_audio_dir.glob("*.mp3"))
+            
+            # Remove files older than max_file_age_hours
+            cutoff_time = datetime.now() - timedelta(hours=self.max_file_age_hours)
+            for file_path in temp_files:
+                if datetime.fromtimestamp(file_path.stat().st_mtime) < cutoff_time:
+                    file_path.unlink()
+            
+            # If still too many files, remove oldest ones
+            temp_files = list(self.temp_audio_dir.glob("*.wav")) + list(self.temp_audio_dir.glob("*.mp3"))
+            if len(temp_files) > self.max_temp_files:
+                # Sort by modification time (oldest first)
+                temp_files.sort(key=lambda x: x.stat().st_mtime)
+                # Remove oldest files
+                for file_path in temp_files[:-self.max_temp_files]:
+                    file_path.unlink()
+                    
+        except Exception as e:
+            print(f"Warning: Failed to cleanup temp files: {e}")
+    
+    def _save_temp_audio(self, audio_bytes: bytes, prefix: str = "audio") -> str:
+        """Save audio bytes to temporary file and return file path."""
+        try:
+            # Cleanup old files first
+            self._cleanup_temp_files()
+            
+            # Generate unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"{prefix}_{timestamp}.wav"
+            file_path = self.temp_audio_dir / filename
+            
+            # Save audio file
+            with open(file_path, 'wb') as f:
+                f.write(audio_bytes)
+            
+            return str(file_path)
+            
+        except Exception as e:
+            print(f"Error saving temp audio: {e}")
+            return ""
+    
+    def _load_temp_audio(self, file_path: str) -> Optional[bytes]:
+        """Load audio bytes from temporary file."""
+        try:
+            with open(file_path, 'rb') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error loading temp audio: {e}")
+            return None
+    
+    def _delete_temp_audio(self, file_path: str) -> bool:
+        """Delete temporary audio file."""
+        try:
+            Path(file_path).unlink(missing_ok=True)
+            return True
+        except Exception as e:
+            print(f"Error deleting temp audio: {e}")
+            return False
+    
+    async def transcribe(self, audio_data: str, language: str = "en") -> Dict[str, Any]:
         """
         Transcribe audio to text using Sarvam ASR API.
         
@@ -45,11 +119,14 @@ class AudioService:
             language: Language code for transcription (not used as Sarvam auto-detects)
             
         Returns:
-            Transcribed text
+            Raw transcription data
         """
         try:
             # Decode base64 audio data
             audio_bytes = base64.b64decode(audio_data)
+            
+            # Save to temp file
+            temp_file_path = self._save_temp_audio(audio_bytes, "input")
             
             # Use Sarvam ASR API
             files = {'file': ('input.wav', audio_bytes, 'audio/wav')}
@@ -62,13 +139,38 @@ class AudioService:
             response = requests.post('https://api.sarvam.ai/speech-to-text', files=files, data=data, headers=headers)
 
             if not response.ok:
-                return f"ASR API request failed with status {response.status_code}: {response.text}"
+                return {
+                    "success": False,
+                    "error": f"ASR API request failed with status {response.status_code}",
+                    "response_text": response.text
+                }
 
             transcript = response.json().get("transcript", "")
-            return transcript if transcript else "Sorry, I couldn't understand the audio."
+            
+            if not transcript:
+                return {
+                    "success": False,
+                    "error": "No transcript generated",
+                    "message": "Sorry, I couldn't understand the audio."
+                }
+            
+            # Detect language from transcript
+            detected_language = self.detect_language(transcript)
+            
+            return {
+                "success": True,
+                "transcript": transcript,
+                "detected_language": detected_language,
+                "audio_size": len(audio_bytes),
+                "temp_file_path": temp_file_path,
+                "model_used": "saarika:v2"
+            }
                 
         except Exception as e:
-            return f"Audio transcription failed: {str(e)}"
+            return {
+                "success": False,
+                "error": f"Audio transcription failed: {str(e)}"
+            }
     
     def detect_language(self, text: str) -> str:
         """Detect language using Sarvam LID API or fallback to character ranges"""
@@ -149,7 +251,7 @@ class AudioService:
             elif code in odia_range:
                 script_counts['odia'] += 1
 
-        max_script = max(script_counts, key=script_counts.get)
+        max_script = max(script_counts.items(), key=lambda x: x[1])[0]
         max_count = script_counts[max_script]
 
         if max_count > 0:
@@ -198,31 +300,32 @@ class AudioService:
 
         # Replace multiple spaces with single space
         cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
-        cleaned_text = cleaned_text.replace('```', '')
-
+        
         return cleaned_text
 
-    async def generate_audio(self, text: str, language: str = "en") -> str:
+    async def generate_audio(self, text: str, language: str = "en") -> Dict[str, Any]:
         """
         Generate audio from text using Sarvam TTS API.
         
         Args:
-            text: Text to convert to audio
-            language: Language code for audio generation
+            text: Text to convert to speech
+            language: Language code for TTS
             
         Returns:
-            Base64 encoded audio data
+            Raw audio generation data
         """
         try:
-            # Clean the text
+            # Clean text for TTS
             cleaned_text = self._clean_text_for_tts(text)
             
-            if not cleaned_text or not cleaned_text.strip():
-                # Return silent WAV placeholder
-                return "UklGRkoAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQYAAAAAAQ=="
-
-            # Map language to Sarvam language code
-            lang_code = self.language_mapping.get(language, "en-IN")
+            if not cleaned_text:
+                return {
+                    "success": False,
+                    "error": "No text provided for audio generation"
+                }
+            
+            # Map language to Sarvam format
+            sarvam_language = self.language_mapping.get(language.lower(), "en-IN")
             
             # Use Sarvam TTS API
             headers = {
@@ -231,56 +334,123 @@ class AudioService:
             }
             payload = {
                 'text': cleaned_text,
-                'target_language_code': lang_code,
-                'speaker': 'anushka',
-                'model': 'bulbul:v2'
+                'model': 'saarika:v2',
+                'language_code': sarvam_language,
+                'voice': 'female'  # Default to female voice
             }
 
             response = requests.post('https://api.sarvam.ai/text-to-speech', json=payload, headers=headers)
 
             if not response.ok:
-                raise Exception(f"Sarvam TTS API request failed with status {response.status_code}: {response.text}")
-            
-            json_response = response.json()
-            if not json_response.get('audios') or not json_response['audios'][0]:
-                raise Exception("Sarvam TTS API response OK, but no audio data found.")
+                return {
+                    "success": False,
+                    "error": f"TTS API request failed with status {response.status_code}",
+                    "response_text": response.text
+                }
 
-            base64_audio = json_response['audios'][0]
+            # Get audio data from response
+            audio_data = response.content
             
-            if not base64_audio or len(base64_audio) < 100:
-                raise Exception("Invalid or too short audio data received from Sarvam TTS.")
-                
-            return base64_audio
-                    
+            # Save to temp file
+            temp_file_path = self._save_temp_audio(audio_data, "output")
+            
+            # Convert to base64 for storage/transmission
+            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+            
+            return {
+                "success": True,
+                "audio_data": audio_base64,
+                "temp_file_path": temp_file_path,
+                "text": cleaned_text,
+                "language": language,
+                "sarvam_language": sarvam_language,
+                "audio_size": len(audio_data),
+                "model_used": "saarika:v2",
+                "voice": "female"
+            }
+            
         except Exception as e:
-            raise Exception(f"Audio generation failed: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Audio generation failed: {str(e)}"
+            }
     
-    async def play_audio(self, audio_data: str) -> bool:
+    async def play_audio(self, audio_data: str) -> Dict[str, Any]:
         """
-        Play audio data (for testing purposes).
-        Note: This is a placeholder - actual playback would depend on the client implementation.
+        Play audio (placeholder for future implementation).
         
         Args:
             audio_data: Base64 encoded audio data
             
         Returns:
-            Success status
+            Play status
         """
         try:
-            # Validate that we have valid base64 audio data
+            # Decode base64 audio
             audio_bytes = base64.b64decode(audio_data)
             
-            # In a real implementation, this would:
-            # 1. Send audio to client for playback
-            # 2. Or use a server-side audio library
-            # 3. Or save to a file for download
+            # Save to temp file for playback
+            temp_file_path = self._save_temp_audio(audio_bytes, "playback")
             
-            # For now, just validate the data and return success
-            if len(audio_bytes) > 100:  # Basic validation
-                return True
-            else:
-                return False
-                
+            # Placeholder implementation
+            return {
+                "success": True,
+                "message": "Audio play feature not implemented",
+                "temp_file_path": temp_file_path,
+                "audio_size": len(audio_bytes)
+            }
+            
         except Exception as e:
-            print(f"Audio playback validation failed: {str(e)}")
-            return False
+            return {
+                "success": False,
+                "error": f"Audio play failed: {str(e)}"
+            }
+    
+    async def cleanup_temp_files(self) -> Dict[str, Any]:
+        """Manually trigger cleanup of temporary audio files."""
+        try:
+            initial_count = len(list(self.temp_audio_dir.glob("*")))
+            self._cleanup_temp_files()
+            final_count = len(list(self.temp_audio_dir.glob("*")))
+            
+            return {
+                "success": True,
+                "files_removed": initial_count - final_count,
+                "remaining_files": final_count,
+                "temp_directory": str(self.temp_audio_dir)
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Cleanup failed: {str(e)}"
+            }
+    
+    def get_temp_file_info(self) -> Dict[str, Any]:
+        """Get information about temporary audio files."""
+        try:
+            temp_files = list(self.temp_audio_dir.glob("*"))
+            file_info = []
+            
+            for file_path in temp_files:
+                stat = file_path.stat()
+                file_info.append({
+                    "name": file_path.name,
+                    "size": stat.st_size,
+                    "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "age_hours": (datetime.now() - datetime.fromtimestamp(stat.st_mtime)).total_seconds() / 3600
+                })
+            
+            return {
+                "success": True,
+                "temp_directory": str(self.temp_audio_dir),
+                "total_files": len(file_info),
+                "files": file_info
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to get temp file info: {str(e)}"
+            }

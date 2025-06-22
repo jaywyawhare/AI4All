@@ -3,6 +3,7 @@ const { Client, LocalAuth, MessageTypes } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const messageHandler = require('./handlers/messageHandler');
 const logger = require('./utils/logger');
+const User = require('./models/User');
 
 // Initialize WhatsApp client
 const client = new Client({
@@ -19,42 +20,40 @@ client.on('qr', (qr) => {
 });
 
 client.on('ready', () => {
-    logger.info('WhatsApp bot is ready!');
+    logger.info('Voice-first WhatsApp bot is ready!');
+    logger.info('Bot supports: Voice messages, Text messages, Images, and Documents');
 });
 
 // Handle incoming messages
 client.on('message', async (message) => {
     try {
-        logger.info(`Processing message from ${message.from}`);
-        const response = await messageHandler.handleMessage(message);
+        const wpUserId = message.from;
+        logger.info(`Processing ${message.type} message from ${wpUserId}`);
+
+        // Get or create user
+        let user = await User.findByWpUserId(wpUserId);
+        if (!user) {
+            user = await User.createOrUpdate(wpUserId, {
+                phoneNumber: wpUserId.replace('@c.us', ''),
+                name: message._data.notifyName || 'Unknown'
+            });
+        }
+
+        // Process message through handler
+        const response = await messageHandler.handleMessage(message, user);
         
         if (!response.success) {
-            if (response.messageType) {
-                await message.reply(`Sorry, I don't handle ${response.messageType} messages yet.`);
-            } else {
-                await message.reply('Sorry, I encountered an error while processing your message.');
-            }
+            logger.error(`Message processing failed: ${response.error}`);
+            await message.reply('Sorry, I encountered an error while processing your message. Please try again.');
             return;
         }
 
-        // Handle successful response based on type
-        switch (response.data.type) {
-            case 'text':
-                await message.reply(`Received your message: ${response.data.content}`);
-                break;
-            case 'sticker':
-                const stickerInfo = response.data.isAnimated ? 'animated' : 'static';
-                const quotedInfo = response.data.hasQuotedMessage ? 
-                    ` (in reply to a ${response.data.quotedMessageType} message)` : '';
-                await message.reply(`Received your ${stickerInfo} sticker${quotedInfo}!`);
-                break;
-            default:
-                await message.reply(`Received and processed your ${response.data.type} successfully.`);
-        }
-        
+        // Send response based on user preferences
+        await messageHandler.sendResponse(message, response.data, user);
+
     } catch (error) {
         logger.error('Error in message handling:', error);
-        await message.reply('Sorry, something went wrong while processing your message.');
+        await message.reply('Sorry, something went wrong while processing your message. Please try again.');
     }
 });
 

@@ -17,6 +17,7 @@ class Settings:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     WEATHER_API_KEY: str = os.getenv("WEATHER_API_KEY", "")
+    SARVAM_API_KEY: str = os.getenv("SARVAM_API_KEY", "")
     
     # Database configuration
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///whatsapp_bot.db")
