@@ -4,8 +4,13 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import httpx
 from mem0 import Memory
+import requests
 
 from config.settings import Settings
+from config.logging import get_logger
+
+# Initialize logger for health service
+logger = get_logger('health_service')
 
 class HealthService:
     """Service for health record management and hospital finding."""

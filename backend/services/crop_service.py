@@ -3,9 +3,14 @@ from typing import Dict, Any, Optional, List
 import json
 from datetime import datetime, timedelta
 import httpx
+import random
 
 from config.settings import Settings
 from services.weather_service import WeatherService
+from config.logging import get_logger
+
+# Initialize logger for crop service
+logger = get_logger('crop_service')
 
 class CropService:
     """Service for crop prediction and agricultural advice."""
@@ -44,50 +49,47 @@ class CropService:
         Predict crop sowing patterns, rates, and optimal timing.
         
         Args:
-            crop_type: Type of crop to analyze
+            crop_type: Type of crop
             location: Location for prediction
-            season: Specific season (kharif/rabi/zaid)
+            season: Season (kharif/rabi/zaid)
             
         Returns:
             Raw crop prediction data
         """
         try:
-            crop_type = crop_type.lower().strip()
+            logger.info(f"Predicting crop info for {crop_type} in {location}, season: {season}")
             
-            # Check if crop is in our database
-            if crop_type not in self.crop_data:
-                return await self._handle_unknown_crop(crop_type, location, season)
-            
-            crop_info = self.crop_data[crop_type]
+            # Validate inputs
+            if not crop_type or not location:
+                logger.warning("Missing required parameters: crop_type or location")
+                return {
+                    "success": False,
+                    "error": "Crop type and location are required"
+                }
             
             # Get weather data for the location
             weather_data = await self.weather_service.get_weather_forecast(location, 7)
+            logger.debug(f"Weather data retrieved for crop prediction: {weather_data.get('success', False)}")
             
-            # Get current month
-            current_month = datetime.now().month
+            # Get crop recommendations
+            recommendations = await self._get_crop_recommendations(crop_type, location, season, weather_data)
             
-            # Determine best sowing time
-            sowing_advice = self._get_sowing_advice(crop_info, current_month, season)
-            
-            # Get market price prediction
-            price_prediction = await self._get_price_prediction(crop_type, location)
-            
+            logger.info(f"Crop prediction completed successfully for {crop_type}")
             return {
                 "success": True,
                 "crop_type": crop_type,
                 "location": location,
                 "season": season,
-                "crop_info": crop_info,
-                "sowing_advice": sowing_advice,
-                "price_prediction": price_prediction,
-                "weather_data": weather_data,
-                "current_month": current_month
+                "recommendations": recommendations,
+                "weather_context": weather_data.get("forecast", {}),
+                "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
+            logger.error(f"Crop prediction failed for {crop_type}: {str(e)}")
             return {
                 "success": False,
-                "error": f"Crop prediction service error: {str(e)}"
+                "error": f"Crop prediction failed: {str(e)}"
             }
     
     async def _get_fallback_crop_data(self, crop_type: str, location: str, season: str) -> Dict:

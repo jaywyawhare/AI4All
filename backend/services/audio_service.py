@@ -13,6 +13,10 @@ from datetime import datetime, timedelta
 import glob
 
 from config.settings import Settings
+from config.logging import get_logger
+
+# Initialize logger for audio service
+logger = get_logger('audio_service')
 
 class AudioService:
     """Service for handling audio transcription and generation using Sarvam APIs."""
@@ -50,14 +54,23 @@ class AudioService:
     def _cleanup_temp_files(self):
         """Clean up old temporary audio files based on age and count."""
         try:
+            logger.debug("Starting temp file cleanup...")
+            
             # Get all temp audio files
             temp_files = list(self.temp_audio_dir.glob("*.wav")) + list(self.temp_audio_dir.glob("*.mp3"))
+            initial_count = len(temp_files)
+            logger.debug(f"Found {initial_count} temp files")
             
             # Remove files older than max_file_age_hours
             cutoff_time = datetime.now() - timedelta(hours=self.max_file_age_hours)
+            removed_by_age = 0
             for file_path in temp_files:
                 if datetime.fromtimestamp(file_path.stat().st_mtime) < cutoff_time:
                     file_path.unlink()
+                    removed_by_age += 1
+            
+            if removed_by_age > 0:
+                logger.info(f"Removed {removed_by_age} files older than {self.max_file_age_hours} hours")
             
             # If still too many files, remove oldest ones
             temp_files = list(self.temp_audio_dir.glob("*.wav")) + list(self.temp_audio_dir.glob("*.mp3"))
@@ -65,11 +78,13 @@ class AudioService:
                 # Sort by modification time (oldest first)
                 temp_files.sort(key=lambda x: x.stat().st_mtime)
                 # Remove oldest files
-                for file_path in temp_files[:-self.max_temp_files]:
+                files_to_remove = temp_files[:-self.max_temp_files]
+                for file_path in files_to_remove:
                     file_path.unlink()
+                logger.info(f"Removed {len(files_to_remove)} oldest files to maintain limit")
                     
         except Exception as e:
-            print(f"Warning: Failed to cleanup temp files: {e}")
+            logger.error(f"Failed to cleanup temp files: {e}")
     
     def _save_temp_audio(self, audio_bytes: bytes, prefix: str = "audio") -> str:
         """Save audio bytes to temporary file and return file path."""
@@ -122,11 +137,15 @@ class AudioService:
             Raw transcription data
         """
         try:
+            logger.info(f"Starting audio transcription for language: {language}")
+            
             # Decode base64 audio data
             audio_bytes = base64.b64decode(audio_data)
+            logger.debug(f"Decoded audio data, size: {len(audio_bytes)} bytes")
             
             # Save to temp file
             temp_file_path = self._save_temp_audio(audio_bytes, "input")
+            logger.debug(f"Saved audio to temp file: {temp_file_path}")
             
             # Use Sarvam ASR API
             files = {'file': ('input.wav', audio_bytes, 'audio/wav')}
@@ -136,9 +155,11 @@ class AudioService:
             }
             headers = {'api-subscription-key': self.api_key}
 
+            logger.info("Making request to Sarvam ASR API...")
             response = requests.post('https://api.sarvam.ai/speech-to-text', files=files, data=data, headers=headers)
 
             if not response.ok:
+                logger.error(f"ASR API request failed with status {response.status_code}: {response.text}")
                 return {
                     "success": False,
                     "error": f"ASR API request failed with status {response.status_code}",
@@ -146,8 +167,10 @@ class AudioService:
                 }
 
             transcript = response.json().get("transcript", "")
+            logger.info(f"Transcription successful, transcript length: {len(transcript)}")
             
             if not transcript:
+                logger.warning("No transcript generated from audio")
                 return {
                     "success": False,
                     "error": "No transcript generated",
@@ -156,6 +179,7 @@ class AudioService:
             
             # Detect language from transcript
             detected_language = self.detect_language(transcript)
+            logger.info(f"Detected language: {detected_language}")
             
             return {
                 "success": True,
@@ -167,6 +191,7 @@ class AudioService:
             }
                 
         except Exception as e:
+            logger.error(f"Audio transcription failed: {str(e)}")
             return {
                 "success": False,
                 "error": f"Audio transcription failed: {str(e)}"
@@ -315,10 +340,14 @@ class AudioService:
             Raw audio generation data
         """
         try:
+            logger.info(f"Starting audio generation for language: {language}, text length: {len(text)}")
+            
             # Clean text for TTS
             cleaned_text = self._clean_text_for_tts(text)
+            logger.debug(f"Cleaned text length: {len(cleaned_text)}")
             
             if not cleaned_text:
+                logger.warning("No text provided for audio generation")
                 return {
                     "success": False,
                     "error": "No text provided for audio generation"
@@ -326,6 +355,7 @@ class AudioService:
             
             # Map language to Sarvam format
             sarvam_language = self.language_mapping.get(language.lower(), "en-IN")
+            logger.debug(f"Mapped language {language} to Sarvam format: {sarvam_language}")
             
             # Use Sarvam TTS API
             headers = {
@@ -339,9 +369,11 @@ class AudioService:
                 'voice': 'female'  # Default to female voice
             }
 
+            logger.info("Making request to Sarvam TTS API...")
             response = requests.post('https://api.sarvam.ai/text-to-speech', json=payload, headers=headers)
 
             if not response.ok:
+                logger.error(f"TTS API request failed with status {response.status_code}: {response.text}")
                 return {
                     "success": False,
                     "error": f"TTS API request failed with status {response.status_code}",
@@ -350,9 +382,11 @@ class AudioService:
 
             # Get audio data from response
             audio_data = response.content
+            logger.info(f"Audio generation successful, audio size: {len(audio_data)} bytes")
             
             # Save to temp file
             temp_file_path = self._save_temp_audio(audio_data, "output")
+            logger.debug(f"Saved generated audio to temp file: {temp_file_path}")
             
             # Convert to base64 for storage/transmission
             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
@@ -368,8 +402,9 @@ class AudioService:
                 "model_used": "saarika:v2",
                 "voice": "female"
             }
-            
+                    
         except Exception as e:
+            logger.error(f"Audio generation failed: {str(e)}")
             return {
                 "success": False,
                 "error": f"Audio generation failed: {str(e)}"
@@ -409,18 +444,23 @@ class AudioService:
     async def cleanup_temp_files(self) -> Dict[str, Any]:
         """Manually trigger cleanup of temporary audio files."""
         try:
+            logger.info("Manual temp file cleanup requested")
             initial_count = len(list(self.temp_audio_dir.glob("*")))
             self._cleanup_temp_files()
             final_count = len(list(self.temp_audio_dir.glob("*")))
             
+            files_removed = initial_count - final_count
+            logger.info(f"Cleanup completed: {files_removed} files removed, {final_count} remaining")
+            
             return {
                 "success": True,
-                "files_removed": initial_count - final_count,
+                "files_removed": files_removed,
                 "remaining_files": final_count,
                 "temp_directory": str(self.temp_audio_dir)
             }
-            
+                
         except Exception as e:
+            logger.error(f"Cleanup failed: {str(e)}")
             return {
                 "success": False,
                 "error": f"Cleanup failed: {str(e)}"

@@ -6,6 +6,11 @@ from psycopg2.extras import RealDictCursor
 import re
 from urllib.parse import urlparse
 from config.settings import Settings
+from config.logging import get_logger
+from datetime import datetime
+
+# Initialize logger for scheme service
+logger = get_logger('scheme_service')
 
 class SchemeService:
     """MCP Tool for government scheme search using PostgreSQL with vector support."""
@@ -28,62 +33,57 @@ class SchemeService:
         """Get PostgreSQL connection."""
         return psycopg2.connect(self.db_config)
     
-    async def search_schemes(self, query: str, user_age: Optional[int] = None, 
-                           user_gender: Optional[str] = None, 
-                           user_state: Optional[str] = None, 
-                           user_caste: Optional[str] = None, 
-                           is_minority: Optional[bool] = None, 
-                           is_differently_abled: Optional[bool] = None,
-                           is_bpl: Optional[bool] = None, 
-                           is_student: Optional[bool] = None) -> Dict[str, Any]:
+    async def search_schemes(self, query: str, age: int = 0, gender: str = "", state: str = "", category: str = "") -> Dict[str, Any]:
         """
-        MCP Tool: Search for relevant government schemes using vector similarity and filters.
+        Search for government schemes using vector similarity and filters.
         
         Args:
-            query: Search query for schemes
-            user_age: User's age
-            user_gender: User's gender (male/female)
-            user_state: User's state
-            user_caste: User's caste
-            is_minority: Whether user belongs to minority
-            is_differently_abled: Whether user is differently abled
-            is_bpl: Whether user is below poverty line
-            is_student: Whether user is a student
+            query: Search query
+            age: User age for filtering
+            gender: User gender for filtering
+            state: User state for filtering
+            category: User category (SC/ST/OBC/General) for filtering
             
         Returns:
-            Dict with search results and metadata
+            Raw scheme search results
         """
         try:
-            # Build search query
-            search_results = await self._vector_search(query)
+            logger.info(f"Searching schemes with query: '{query}', filters: age={age}, gender={gender}, state={state}, category={category}")
             
-            # Apply eligibility filters
-            filtered_results = await self._apply_eligibility_filters(
-                search_results, user_age, user_gender, user_state, user_caste,
-                is_minority, is_differently_abled, is_bpl, is_student
-            )
+            if not query.strip():
+                logger.warning("Empty search query provided")
+                return {
+                    "success": False,
+                    "error": "Search query is required"
+                }
             
+            # Build search query with filters
+            search_query = self._build_search_query(query, age, gender, state, category)
+            logger.debug(f"Built search query: {search_query[:200]}...")
+            
+            # Execute search
+            schemes = await self._execute_search(search_query, query)
+            
+            logger.info(f"Scheme search completed, found {len(schemes)} schemes")
             return {
                 "success": True,
                 "query": query,
-                "total_schemes": len(filtered_results),
-                "schemes": filtered_results[:10],  # Top 10 results
-                "filters_applied": {
-                    "age": user_age,
-                    "gender": user_gender,
-                    "state": user_state,
-                    "caste": user_caste,
-                    "is_minority": is_minority,
-                    "is_differently_abled": is_differently_abled,
-                    "is_bpl": is_bpl,
-                    "is_student": is_student
-                }
+                "filters": {
+                    "age": age,
+                    "gender": gender,
+                    "state": state,
+                    "category": category
+                },
+                "schemes": schemes,
+                "total_count": len(schemes),
+                "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
+            logger.error(f"Scheme search failed: {str(e)}")
             return {
                 "success": False,
-                "error": f"Scheme search error: {str(e)}"
+                "error": f"Scheme search failed: {str(e)}"
             }
     
     async def _vector_search(self, query: str) -> List[Dict]:

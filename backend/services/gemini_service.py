@@ -9,6 +9,10 @@ from PIL import Image
 import io
 
 from config.settings import Settings
+from config.logging import get_logger
+
+# Initialize logger for gemini service
+logger = get_logger('gemini_service')
 
 class GeminiService:
     """Service for Gemini AI image analysis and text processing."""
@@ -32,17 +36,27 @@ class GeminiService:
             Raw analysis data
         """
         if not self.client:
+            logger.warning("Gemini API key not configured for medical image analysis")
             return {
                 "success": False,
                 "error": "Gemini API key not configured"
             }
         
         try:
+            logger.info(f"Starting medical image analysis, context: {user_context}")
+            
             # Decode base64 image
             image_bytes = base64.b64decode(image_data)
+            logger.debug(f"Decoded image data, size: {len(image_bytes)} bytes")
+            
+            # Convert to PIL Image
+            image = Image.open(io.BytesIO(image_bytes))
+            logger.debug(f"Image opened successfully, format: {image.format}, size: {image.size}")
             
             # Generate response using AI model
             prompt = self._get_medical_prompt(user_context)
+            logger.debug(f"Generated medical analysis prompt: {prompt[:100]}...")
+            
             response = self.client.models.generate_content(
                 model='gemini-2.0-flash-lite',
                 contents=[
@@ -53,6 +67,7 @@ class GeminiService:
                     prompt
                 ]
             )
+            logger.info(f"Medical image analysis completed successfully, response length: {len(response.text)}")
             
             return {
                 "success": True,
@@ -64,6 +79,7 @@ class GeminiService:
             }
             
         except Exception as e:
+            logger.error(f"Medical image analysis failed: {str(e)}")
             return {
                 "success": False,
                 "error": f"Image analysis failed: {str(e)}",

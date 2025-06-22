@@ -19,6 +19,10 @@ from services.crop_service import CropService
 from services.health_service import HealthService
 from services.scheme_service import SchemeService
 from config.settings import Settings
+from config.logging import get_logger
+
+# Initialize logging
+logger = get_logger('main')
 
 # Load settings
 settings = Settings()
@@ -116,13 +120,24 @@ async def transcribe_audio(
 ) -> str:
     """Transcribe audio in native language to text."""
     try:
+        logger.info(f"Audio transcription requested for language: {language}")
+        logger.debug(f"Audio data length: {len(audio_data)} characters")
+        
         result = await audio_service.transcribe(audio_data, language)
+        
         if result.get("success"):
-            return result.get("transcript", "No transcript generated")
+            transcript = result.get("transcript", "No transcript generated")
+            logger.info(f"Audio transcription successful, transcript length: {len(transcript)}")
+            return transcript
         else:
-            return f"Transcription failed: {result.get('error', 'Unknown error')}"
+            error_msg = f"Transcription failed: {result.get('error', 'Unknown error')}"
+            logger.error(f"Audio transcription failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Audio transcription failed: {str(e)}"))
+        error_msg = f"Audio transcription failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 ImageAnalysisToolDescription = RichToolDescription(
     description="Analyze medical images with voice-friendly explanations in native language.",
@@ -137,12 +152,24 @@ async def analyze_medical_image(
 ) -> str:
     """Analyze medical images for wounds or diseases with first aid suggestions."""
     try:
+        logger.info(f"Medical image analysis requested, context: {user_context}")
+        logger.debug(f"Image data length: {len(image_data)} characters")
+        
         result = await gemini_service.analyze_medical_image(image_data, user_context)
-        if isinstance(result, dict):
-            return result.get("analysis", "Analysis completed but no details available")
-        return str(result)
+        
+        if isinstance(result, dict) and result.get("success"):
+            analysis = result.get("analysis", "Image analyzed but no details available")
+            logger.info(f"Medical image analysis completed successfully")
+            return analysis
+        else:
+            error_msg = f"Image analysis failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)}"
+            logger.error(f"Medical image analysis failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Image analysis failed: {str(e)}"))
+        error_msg = f"Image analysis failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 ReportExplanationToolDescription = RichToolDescription(
     description="Explain medical reports in native language optimized for voice delivery.",
@@ -177,12 +204,23 @@ async def get_weather(
 ) -> str:
     """Get weather information for specified location."""
     try:
+        logger.info(f"Weather request for location: {location}, forecast days: {forecast_days}")
+        
         result = await weather_service.get_weather_forecast(location, forecast_days)
-        if isinstance(result, dict):
-            return result.get("forecast", "Weather information retrieved but no details available")
-        return str(result)
+        
+        if isinstance(result, dict) and result.get("success"):
+            forecast = result.get("forecast", "Weather information retrieved but no details available")
+            logger.info(f"Weather information retrieved successfully for {location}")
+            return forecast
+        else:
+            error_msg = f"Weather retrieval failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)}"
+            logger.error(f"Weather retrieval failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Weather retrieval failed: {str(e)}"))
+        error_msg = f"Weather retrieval failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 CropPredictionToolDescription = RichToolDescription(
     description="Predict crop patterns and farming advice optimized for voice communication.",
@@ -191,19 +229,30 @@ CropPredictionToolDescription = RichToolDescription(
 )
 
 @mcp.tool(description=CropPredictionToolDescription.model_dump_json())
-async def predict_crop_info(
+async def get_crop_advice(
     crop_type: Annotated[str, Field(description="Type of crop")],
-    location: Annotated[str, Field(description="Location for prediction")],
+    location: Annotated[str, Field(description="Location for crop advice")],
     season: Annotated[str, Field(description="Season (kharif/rabi/zaid)", default="")]
 ) -> str:
-    """Predict crop sowing patterns, rates, and optimal timing."""
+    """Get crop sowing advice and patterns."""
     try:
+        logger.info(f"Crop advice requested for {crop_type} in {location}, season: {season}")
+        
         result = await crop_service.predict_crop_info(crop_type, location, season)
-        if isinstance(result, dict):
-            return result.get("advice", "Crop advice retrieved but no details available")
-        return str(result)
+        
+        if isinstance(result, dict) and result.get("success"):
+            recommendations = result.get("recommendations", "Crop advice retrieved but no details available")
+            logger.info(f"Crop advice retrieved successfully for {crop_type}")
+            return recommendations
+        else:
+            error_msg = f"Crop advice failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)}"
+            logger.error(f"Crop advice failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Crop prediction failed: {str(e)}"))
+        error_msg = f"Crop advice failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 HealthRecordToolDescription = RichToolDescription(
     description="Voice-accessible health record management for prescriptions and medical data.",
@@ -219,12 +268,24 @@ async def manage_health_record(
 ) -> str:
     """Manage user health records and prescriptions."""
     try:
+        logger.info(f"Health record management requested for user: {user_id}, action: {action}")
+        logger.debug(f"Health data length: {len(data)} characters")
+        
         result = await health_service.manage_record(user_id, action, data)
-        if isinstance(result, dict):
-            return result.get("message", "Health record operation completed")
-        return str(result)
+        
+        if isinstance(result, dict) and result.get("success"):
+            message = result.get("message", "Health record operation completed")
+            logger.info(f"Health record operation completed successfully for user: {user_id}")
+            return message
+        else:
+            error_msg = f"Health record operation failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)}"
+            logger.error(f"Health record operation failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Health record management failed: {str(e)}"))
+        error_msg = f"Health record management failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 SchemeSearchToolDescription = RichToolDescription(
     description="Search government schemes with voice-friendly explanations in native language.",
@@ -233,26 +294,32 @@ SchemeSearchToolDescription = RichToolDescription(
 )
 
 @mcp.tool(description=SchemeSearchToolDescription.model_dump_json())
-async def search_government_schemes(
+async def search_schemes(
     query: Annotated[str, Field(description="Search query for schemes")],
-    age: Annotated[int, Field(description="User age", default=0)],
-    gender: Annotated[str, Field(description="User gender", default="")],
-    state: Annotated[str, Field(description="User state", default="")],
-    category: Annotated[str, Field(description="Category (SC/ST/OBC/General)", default="")]
+    age: Annotated[int, Field(description="User age for filtering", default=0)],
+    gender: Annotated[str, Field(description="User gender for filtering", default="")],
+    state: Annotated[str, Field(description="User state for filtering", default="")],
+    category: Annotated[str, Field(description="User category for filtering", default="")]
 ) -> str:
-    """Search for relevant government schemes."""
+    """Search for government schemes using vector similarity and filters."""
     try:
+        logger.info(f"Scheme search requested with query: '{query}', filters: age={age}, gender={gender}, state={state}, category={category}")
+        
         result = await scheme_service.search_schemes(query, age, gender, state, category)
-        if isinstance(result, dict):
+        
+        if isinstance(result, dict) and result.get("success"):
             schemes = result.get("schemes", [])
-            if schemes:
-                scheme_names = [scheme.get("name", "Unknown") for scheme in schemes[:5]]
-                return f"Found {len(schemes)} schemes: {', '.join(scheme_names)}"
-            else:
-                return "No schemes found matching your criteria"
-        return str(result)
+            logger.info(f"Scheme search successful, found {len(schemes)} schemes")
+            return schemes
+        else:
+            error_msg = f"Scheme search failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)}"
+            logger.error(f"Scheme search failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Scheme search failed: {str(e)}"))
+        error_msg = f"Scheme search failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 AudioGenerationToolDescription = RichToolDescription(
     description="PRIMARY TOOL - Generate audio response in user's native language for voice-first experience.",
@@ -267,12 +334,23 @@ async def generate_audio_response(
 ) -> str:
     """Generate audio response in native language."""
     try:
+        logger.info(f"Audio generation requested for language: {language}, text length: {len(text)}")
+        
         result = await audio_service.generate_audio(text, language)
-        if isinstance(result, dict):
-            return result.get("audio_path", "Audio generated but path not available")
-        return str(result)
+        
+        if isinstance(result, dict) and result.get("success"):
+            audio_path = result.get("audio_path", "Audio generated but path not available")
+            logger.info(f"Audio generation successful, path: {audio_path}")
+            return audio_path
+        else:
+            error_msg = f"Audio generation failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)}"
+            logger.error(f"Audio generation failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Audio generation failed: {str(e)}"))
+        error_msg = f"Audio generation failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 HospitalFinderToolDescription = RichToolDescription(
     description="Find nearest hospitals with voice-optimized location information.",
@@ -287,12 +365,23 @@ async def find_nearest_hospital(
 ) -> str:
     """Find nearest hospitals or medical facilities."""
     try:
+        logger.info(f"Hospital search requested for location: {location}, emergency type: {emergency_type}")
+        
         result = await health_service.find_nearby_hospitals(location, emergency_type)
-        if isinstance(result, dict):
-            return result.get("hospitals", "Hospital search completed but no results available")
-        return str(result)
+        
+        if isinstance(result, dict) and result.get("success"):
+            hospitals = result.get("hospitals", "Hospital search completed but no results available")
+            logger.info(f"Hospital search completed successfully for {location}")
+            return hospitals
+        else:
+            error_msg = f"Hospital search failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)}"
+            logger.error(f"Hospital search failed: {error_msg}")
+            return error_msg
+            
     except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"Hospital search failed: {str(e)}"))
+        error_msg = f"Hospital search failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 # LLM Support Tool - Sarvam AI
 LLMSupportToolDescription = RichToolDescription(
@@ -310,69 +399,62 @@ async def get_sarvam_response(
 ) -> str:
     """Get AI-powered response using Sarvam AI with translation support."""
     try:
+        logger.info(f"Sarvam AI response requested for language: {input_language}, format: {response_format}")
+        logger.debug(f"Query length: {len(query)} characters, context length: {len(context)} characters")
+        
         # Import Sarvam AI client
         try:
-            from sarvamai import SarvamAI
+            import sarvamai
+            client = sarvamai.SarvamAI(api_key=settings.SARVAM_API_KEY)
         except ImportError:
-            return "Sarvam AI client not available. Please install sarvamai package."
+            logger.error("Sarvam AI package not available")
+            return "Sarvam AI service not available"
+        except Exception as e:
+            logger.error(f"Failed to initialize Sarvam AI client: {str(e)}")
+            return f"Sarvam AI initialization failed: {str(e)}"
         
-        # Configure Sarvam AI client
-        if settings.SARVAM_API_KEY:
-            client = SarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
-            
-            # Prepare system message for voice-first WhatsApp bot
-            system_message = f"""
-            You are a helpful AI assistant for a voice-first WhatsApp bot serving users in India.
-            
-            User's Language: {input_language}
-            Response Format: {response_format}
-            Additional Context: {context}
-            
-            Please provide a comprehensive response that:
-            1. Is conversational and natural for {response_format} delivery
-            2. Uses simple, clear language that works well for {response_format}
-            3. Is culturally appropriate for Indian users
-            4. Includes relevant information and helpful guidance
-            5. Is optimized for {response_format} delivery
-            6. Can be easily understood by users in India
-            
-            If the user query is in Hindi or another Indian language, respond in the same language.
-            If it's in English, respond in English.
-            
-            Keep the response informative, helpful, and {response_format}-optimized.
-            """
-            
-            # Prepare messages for Sarvam AI
-            messages = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": query},
-            ]
-            
-            # Get response from Sarvam AI
-            response = client.chat.completions.create(
-                model="sarvam-ai/OpenHathi-7B-Instruct-v0.1",
-                messages=messages,
-                max_tokens=500,
+        # Generate response
+        try:
+            response = await client.chat.completions.create(
+                model="sarvam-ai/sarvam-v1",
+                messages=[
+                    {"role": "system", "content": "You are a helpful AI assistant for Indian users. Provide clear, accurate responses in the user's preferred language."},
+                    {"role": "user", "content": f"Context: {context}\n\nQuery: {query}"}
+                ],
+                max_tokens=1000,
                 temperature=0.7
             )
             
             ai_response = response.choices[0].message.content
+            logger.info(f"Sarvam AI response generated successfully, length: {len(ai_response)}")
             
-            # If audio format requested, generate audio
-            if response_format == "audio":
-                audio_result = await audio_service.generate_audio(ai_response, input_language)
-                if isinstance(audio_result, dict) and audio_result.get("success"):
-                    return f"AI Response: {ai_response}\nAudio generated at: {audio_result.get('audio_path', 'Unknown path')}"
-                else:
-                    return f"AI Response: {ai_response}\nAudio generation failed"
+            # Translate if needed
+            if input_language != "en":
+                try:
+                    translation = await client.translate(
+                        text=ai_response,
+                        source_language="en",
+                        target_language=input_language
+                    )
+                    final_response = translation.translated_text
+                    logger.info(f"Response translated to {input_language}")
+                except Exception as e:
+                    logger.warning(f"Translation failed, using original response: {str(e)}")
+                    final_response = ai_response
+            else:
+                final_response = ai_response
             
-            return ai_response
+            return final_response
             
-        else:
-            return "Sarvam AI API key not configured. Please set SARVAM_API_KEY in environment variables."
+        except Exception as e:
+            error_msg = f"Sarvam AI response generation failed: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
             
     except Exception as e:
-        return f"AI response generation failed: {str(e)}"
+        error_msg = f"Sarvam AI service failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 # Translation Tool
 TranslationToolDescription = RichToolDescription(
@@ -387,34 +469,43 @@ async def translate_text(
     source_language: Annotated[str, Field(description="Source language code (e.g., 'en', 'hi', 'ta')")],
     target_language: Annotated[str, Field(description="Target language code (e.g., 'en', 'hi', 'ta')")]
 ) -> str:
-    """Translate text between languages."""
+    """Translate text between languages using Sarvam AI."""
     try:
-        # Import Sarvam AI client for translation
-        try:
-            from sarvamai import SarvamAI
-        except ImportError:
-            return "Translation service not available. Please install sarvamai package."
+        logger.info(f"Translation requested from {source_language} to {target_language}")
+        logger.debug(f"Text length: {len(text)} characters")
         
-        if settings.SARVAM_API_KEY:
-            client = SarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
-            
-            # Use Sarvam AI for translation
-            response = client.chat.completions.create(
-                model="sarvamai/sarvam-m",
-                messages=[
-                    {"role": "system", "content": f"You are a translator. Translate the following text from {source_language} to {target_language}. Provide only the translated text without any explanations."},
-                    {"role": "user", "content": text}
-                ],
-                max_tokens=300,
-                temperature=0.3
+        # Import Sarvam AI client
+        try:
+            import sarvamai
+            client = sarvamai.SarvamAI(api_key=settings.SARVAM_API_KEY)
+        except ImportError:
+            logger.error("Sarvam AI package not available for translation")
+            return "Translation service not available"
+        except Exception as e:
+            logger.error(f"Failed to initialize Sarvam AI client for translation: {str(e)}")
+            return f"Translation service initialization failed: {str(e)}"
+        
+        # Perform translation
+        try:
+            translation = await client.translate(
+                text=text,
+                source_language=source_language,
+                target_language=target_language
             )
             
-            return response.choices[0].message.content
-        else:
-            return "Translation service not configured. Please set SARVAM_API_KEY."
+            translated_text = translation.translated_text
+            logger.info(f"Translation completed successfully, result length: {len(translated_text)}")
+            return translated_text
+            
+        except Exception as e:
+            error_msg = f"Translation failed: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
             
     except Exception as e:
-        return f"Translation failed: {str(e)}"
+        error_msg = f"Translation service failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
 
 # Voice Processing Tool (Combined)
 VoiceProcessingToolDescription = RichToolDescription(
@@ -428,43 +519,283 @@ async def process_voice_message(
     audio_data: Annotated[str, Field(description="Base64 encoded audio data")],
     user_language: Annotated[str, Field(description="User's preferred language", default="en")]
 ) -> str:
-    """Process complete voice message pipeline."""
+    """Complete voice processing workflow: transcribe → AI response → audio generation."""
     try:
+        logger.info(f"Voice message processing requested for language: {user_language}")
+        logger.debug(f"Audio data length: {len(audio_data)} characters")
+        
         # Step 1: Transcribe audio
+        logger.info("Step 1: Transcribing audio...")
         transcription_result = await audio_service.transcribe(audio_data, user_language)
         
         if not transcription_result.get("success"):
-            return f"Voice processing failed: {transcription_result.get('error', 'Unknown error')}"
+            error_msg = f"Transcription failed: {transcription_result.get('error', 'Unknown error')}"
+            logger.error(error_msg)
+            return error_msg
         
         transcript = transcription_result.get("transcript", "")
+        detected_language = transcription_result.get("detected_language", user_language)
+        logger.info(f"Transcription successful: '{transcript[:100]}...' in {detected_language}")
         
-        # Step 2: Get AI response
-        ai_response = await get_sarvam_response(transcript, user_language, "text", "")
+        # Step 2: Generate AI response
+        logger.info("Step 2: Generating AI response...")
+        try:
+            import sarvamai
+            client = sarvamai.SarvamAI(api_key=settings.SARVAM_API_KEY)
+            
+            response = await client.chat.completions.create(
+                model="sarvam-ai/sarvam-v1",
+                messages=[
+                    {"role": "system", "content": "You are a helpful AI assistant for Indian users. Provide clear, accurate responses in the user's preferred language."},
+                    {"role": "user", "content": transcript}
+                ],
+                max_tokens=1000,
+                temperature=0.7
+            )
+            
+            ai_response = response.choices[0].message.content
+            logger.info(f"AI response generated successfully, length: {len(ai_response)}")
+            
+        except Exception as e:
+            logger.warning(f"AI response generation failed, using fallback: {str(e)}")
+            ai_response = f"I understood you said: {transcript}. How can I help you with that?"
         
         # Step 3: Generate audio response
-        audio_result = await audio_service.generate_audio(ai_response, user_language)
+        logger.info("Step 3: Generating audio response...")
+        audio_result = await audio_service.generate_audio(ai_response, detected_language)
         
-        if isinstance(audio_result, dict) and audio_result.get("success"):
-            return f"Transcription: {transcript}\nAI Response: {ai_response}\nAudio generated at: {audio_result.get('audio_path', 'Unknown path')}"
+        if audio_result.get("success"):
+            audio_path = audio_result.get("audio_path", "Audio generated but path not available")
+            logger.info(f"Voice processing workflow completed successfully")
+            return f"Transcription: {transcript}\nAI Response: {ai_response}\nAudio: {audio_path}"
         else:
+            logger.warning(f"Audio generation failed, returning text response: {audio_result.get('error', 'Unknown error')}")
             return f"Transcription: {transcript}\nAI Response: {ai_response}\nAudio generation failed"
             
     except Exception as e:
-        return f"Voice processing failed: {str(e)}"
+        error_msg = f"Voice processing workflow failed: {str(e)}"
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
+
+# Help Menu Tool
+HelpMenuToolDescription = RichToolDescription(
+    description="Get comprehensive help menu with all available tools and voice-first features.",
+    use_when="User asks for help, wants to see available features, or needs guidance on using the bot",
+    side_effects=None
+)
+
+@mcp.tool(description=HelpMenuToolDescription.model_dump_json())
+async def get_help_menu(
+    language: Annotated[str, Field(description="Language for help menu (e.g., 'en', 'hi', 'ta')", default="en")]
+) -> str:
+    """Get comprehensive help menu with all available tools and voice-first features."""
+    try:
+        logger.info(f"Help menu requested in language: {language}")
+        
+        help_content = {
+            "en": {
+                "title": "🎤 Voice-First WhatsApp Bot Help Menu",
+                "intro": "Welcome to your AI assistant! Here are all the features available:",
+                "voice_features": {
+                    "title": "🎵 Voice Features",
+                    "transcribe": "• Send voice messages - I'll transcribe them to text",
+                    "audio_response": "• Get audio responses in your preferred language",
+                    "voice_processing": "• Complete voice workflow (transcribe → AI → audio response)"
+                },
+                "ai_features": {
+                    "title": "🤖 AI Features",
+                    "sarvam_ai": "• AI-powered responses using Sarvam AI",
+                    "translation": "• Translate between Indian languages",
+                    "intent_detection": "• Smart intent detection for better responses"
+                },
+                "government_schemes": {
+                    "title": "🏛️ Government Schemes",
+                    "search": "• Search for relevant government schemes",
+                    "filter": "• Filter by age, gender, state, category",
+                    "details": "• Get detailed scheme information and application process"
+                },
+                "health_features": {
+                    "title": "🏥 Health Features",
+                    "image_analysis": "• Analyze medical images for wounds/diseases",
+                    "report_explanation": "• Explain medical reports in your language",
+                    "health_records": "• Manage health records and prescriptions",
+                    "hospital_finder": "• Find nearest hospitals and medical facilities"
+                },
+                "agriculture_features": {
+                    "title": "🌾 Agriculture Features",
+                    "crop_advice": "• Get crop sowing advice and patterns",
+                    "weather_info": "• Weather forecasts for farming",
+                    "seasonal_calendar": "• Crop calendar with seasonal recommendations"
+                },
+                "weather_features": {
+                    "title": "🌤️ Weather Features",
+                    "forecast": "• Detailed weather information",
+                    "farming_advice": "• Weather-based agricultural recommendations",
+                    "alerts": "• Crop-specific weather warnings"
+                },
+                "usage_tips": {
+                    "title": "💡 Usage Tips",
+                    "voice_first": "• Send voice messages for natural interaction",
+                    "language": "• I support Hindi, English, Tamil, Telugu, and more",
+                    "context": "• Provide context for better responses",
+                    "emergency": "• For medical emergencies, contact healthcare professionals"
+                },
+                "commands": {
+                    "title": "📋 Quick Commands",
+                    "help": "• Say 'help' or 'सहायता' for this menu",
+                    "schemes": "• Say 'schemes' or 'योजना' for government schemes",
+                    "weather": "• Say 'weather' or 'मौसम' for weather info",
+                    "health": "• Say 'health' or 'स्वास्थ्य' for health features",
+                    "crop": "• Say 'crop' or 'फसल' for agricultural advice"
+                }
+            },
+            "hi": {
+                "title": "🎤 वॉइस-फर्स्ट WhatsApp बॉट सहायता मेनू",
+                "intro": "आपके AI सहायक में आपका स्वागत है! यहाँ सभी उपलब्ध सुविधाएँ हैं:",
+                "voice_features": {
+                    "title": "🎵 वॉइस सुविधाएँ",
+                    "transcribe": "• वॉइस मैसेज भेजें - मैं उन्हें टेक्स्ट में बदल दूंगा",
+                    "audio_response": "• अपनी पसंदीदा भाषा में ऑडियो प्रतिक्रियाएँ प्राप्त करें",
+                    "voice_processing": "• पूर्ण वॉइस वर्कफ्लो (ट्रांसक्राइब → AI → ऑडियो प्रतिक्रिया)"
+                },
+                "ai_features": {
+                    "title": "🤖 AI सुविधाएँ",
+                    "sarvam_ai": "• Sarvam AI का उपयोग करके AI-संचालित प्रतिक्रियाएँ",
+                    "translation": "• भारतीय भाषाओं के बीच अनुवाद",
+                    "intent_detection": "• बेहतर प्रतिक्रियाओं के लिए स्मार्ट इंटेंट डिटेक्शन"
+                },
+                "government_schemes": {
+                    "title": "🏛️ सरकारी योजनाएँ",
+                    "search": "• प्रासंगिक सरकारी योजनाओं की खोज करें",
+                    "filter": "• आयु, लिंग, राज्य, श्रेणी के अनुसार फ़िल्टर करें",
+                    "details": "• विस्तृत योजना जानकारी और आवेदन प्रक्रिया प्राप्त करें"
+                },
+                "health_features": {
+                    "title": "🏥 स्वास्थ्य सुविधाएँ",
+                    "image_analysis": "• घावों/रोगों के लिए चिकित्सीय छवियों का विश्लेषण",
+                    "report_explanation": "• आपकी भाषा में चिकित्सीय रिपोर्ट की व्याख्या",
+                    "health_records": "• स्वास्थ्य रिकॉर्ड और पर्चे प्रबंधित करें",
+                    "hospital_finder": "• निकटतम अस्पतालों और चिकित्सा सुविधाओं को खोजें"
+                },
+                "agriculture_features": {
+                    "title": "🌾 कृषि सुविधाएँ",
+                    "crop_advice": "• फसल बोने की सलाह और पैटर्न प्राप्त करें",
+                    "weather_info": "• खेती के लिए मौसम पूर्वानुमान",
+                    "seasonal_calendar": "• मौसमी सिफारिशों के साथ फसल कैलेंडर"
+                },
+                "weather_features": {
+                    "title": "🌤️ मौसम सुविधाएँ",
+                    "forecast": "• विस्तृत मौसम जानकारी",
+                    "farming_advice": "• मौसम-आधारित कृषि सिफारिशें",
+                    "alerts": "• फसल-विशिष्ट मौसम चेतावनियाँ"
+                },
+                "usage_tips": {
+                    "title": "💡 उपयोग टिप्स",
+                    "voice_first": "• प्राकृतिक बातचीत के लिए वॉइस मैसेज भेजें",
+                    "language": "• मैं हिंदी, अंग्रेजी, तमिल, तेलुगु और अधिक का समर्थन करता हूं",
+                    "context": "• बेहतर प्रतिक्रियाओं के लिए संदर्भ प्रदान करें",
+                    "emergency": "• चिकित्सा आपात स्थितियों के लिए, स्वास्थ्य देखभाल पेशेवरों से संपर्क करें"
+                },
+                "commands": {
+                    "title": "📋 त्वरित कमांड",
+                    "help": "• इस मेनू के लिए 'help' या 'सहायता' कहें",
+                    "schemes": "• सरकारी योजनाओं के लिए 'schemes' या 'योजना' कहें",
+                    "weather": "• मौसम जानकारी के लिए 'weather' या 'मौसम' कहें",
+                    "health": "• स्वास्थ्य सुविधाओं के लिए 'health' या 'स्वास्थ्य' कहें",
+                    "crop": "• कृषि सलाह के लिए 'crop' या 'फसल' कहें"
+                }
+            }
+        }
+        
+        # Get help content for the requested language, fallback to English
+        content = help_content.get(language.lower(), help_content["en"])
+        
+        # Build help menu
+        help_menu = f"""
+{content['title']}
+
+{content['intro']}
+
+{content['voice_features']['title']}
+{content['voice_features']['transcribe']}
+{content['voice_features']['audio_response']}
+{content['voice_features']['voice_processing']}
+
+{content['ai_features']['title']}
+{content['ai_features']['sarvam_ai']}
+{content['ai_features']['translation']}
+{content['ai_features']['intent_detection']}
+
+{content['government_schemes']['title']}
+{content['government_schemes']['search']}
+{content['government_schemes']['filter']}
+{content['government_schemes']['details']}
+
+{content['health_features']['title']}
+{content['health_features']['image_analysis']}
+{content['health_features']['report_explanation']}
+{content['health_features']['health_records']}
+{content['health_features']['hospital_finder']}
+
+{content['agriculture_features']['title']}
+{content['agriculture_features']['crop_advice']}
+{content['agriculture_features']['weather_info']}
+{content['agriculture_features']['seasonal_calendar']}
+
+{content['weather_features']['title']}
+{content['weather_features']['forecast']}
+{content['weather_features']['farming_advice']}
+{content['weather_features']['alerts']}
+
+{content['usage_tips']['title']}
+{content['usage_tips']['voice_first']}
+{content['usage_tips']['language']}
+{content['usage_tips']['context']}
+{content['usage_tips']['emergency']}
+
+{content['commands']['title']}
+{content['commands']['help']}
+{content['commands']['schemes']}
+{content['commands']['weather']}
+{content['commands']['health']}
+{content['commands']['crop']}
+
+For more information, just ask me anything! मुझसे कुछ भी पूछें!
+        """.strip()
+        
+        logger.info(f"Help menu generated successfully for language: {language}")
+        return help_menu
+        
+    except Exception as e:
+        logger.error(f"Error generating help menu: {str(e)}")
+        return f"Sorry, I couldn't generate the help menu. Error: {str(e)}"
 
 # Validation tool
 @mcp.tool()
 async def validate() -> str:
     """Validate that all services are working correctly."""
+    logger.info("Service validation requested")
     return "All services are operational and ready for voice-first interactions!"
 
 async def main():
     """Main function to run the MCP server."""
-    # Create temp directories
-    Path("temp_audio").mkdir(exist_ok=True)
-    
-    # Start the MCP server using stdio
-    await mcp.run_stdio_async()
+    try:
+        logger.info("Starting Voice-First WhatsApp Bot MCP Server...")
+        logger.info(f"Server configuration: host={settings.HOST}, port={settings.PORT}")
+        logger.info(f"Available tools: {len(mcp.tools)} tools registered")
+        
+        # Log tool names for debugging
+        tool_names = [tool.__name__ for tool in mcp.tools]
+        logger.info(f"Registered tools: {', '.join(tool_names)}")
+        
+        # Start the server
+        logger.info("Starting MCP server with stdio...")
+        await mcp.run_stdio_async()
+        
+    except Exception as e:
+        logger.error(f"Failed to start MCP server: {str(e)}")
+        raise
 
 if __name__ == "__main__":
+    logger.info("Voice-First WhatsApp Bot MCP Server initializing...")
     asyncio.run(main())
