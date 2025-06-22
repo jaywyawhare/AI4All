@@ -92,7 +92,6 @@ class RichToolDescription(BaseModel):
 # Initialize MCP server with system prompt (no auth)
 mcp = FastMCP(
     "WhatsApp Bot MCP Server",
-    system_prompt=SYSTEM_PROMPT,
 )
 
 # Initialize services
@@ -401,7 +400,7 @@ async def translate_text(
             
             # Use Sarvam AI for translation
             response = client.chat.completions.create(
-                model="sarvam-ai/OpenHathi-7B-Instruct-v0.1",
+                model="sarvamai/sarvam-m",
                 messages=[
                     {"role": "system", "content": f"You are a translator. Translate the following text from {source_language} to {target_language}. Provide only the translated text without any explanations."},
                     {"role": "user", "content": text}
@@ -454,7 +453,7 @@ async def process_voice_message(
         return f"Voice processing failed: {str(e)}"
 
 # Validation tool
-@mcp.tool
+@mcp.tool()
 async def validate() -> str:
     """Validate that all services are working correctly."""
     return "All services are operational and ready for voice-first interactions!"
@@ -465,11 +464,7 @@ async def main():
     Path("temp_audio").mkdir(exist_ok=True)
     
     # Start the MCP server
-    await mcp.run(
-        "streamable-http",
-        host="0.0.0.0",
-        port=settings.MCP_PORT,
-    )
+    await mcp.run()
 
 if __name__ == "__main__":
     asyncio.run(main())
